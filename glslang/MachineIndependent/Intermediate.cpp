@@ -3441,7 +3441,10 @@ bool TIntermediate::promoteBinary(TIntermBinary& node)
         break;
 
     case EOpAssign:
-        if (left->getVectorSize() != right->getVectorSize() || left->getMatrixCols() != right->getMatrixCols() || left->getMatrixRows() != right->getMatrixRows())
+        if (left->isVector() && !right->isVector() && left->getBasicType() == right->getBasicType()) {
+            right = addShapeConversion(left->getType(), right);
+            node.setRight(right);
+        } else if (left->getVectorSize() != right->getVectorSize() || left->getMatrixCols() != right->getMatrixCols() || left->getMatrixRows() != right->getMatrixRows())
             return false;
         [[fallthrough]];
 
