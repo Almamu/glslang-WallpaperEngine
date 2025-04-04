@@ -2571,6 +2571,24 @@ public:
         return false;
     }
 
+    // ALMAMU: CUSTOM TYPECASTING CHECKS FOR FUNCTION CALLS
+    //
+    bool canUseVecConstructorForHigherType(const TType& right, int* lpidx = nullptr, int* rpidx = nullptr) const
+    {
+        // Initialize error to general type mismatch.
+        if (lpidx != nullptr) {
+            *lpidx = -1;
+            *rpidx = -1;
+        }
+
+        if (this->basicType != right.basicType)
+            return false;
+
+        if (!this->isVector() && right.isVector())
+            return true;
+
+        return false;
+    }
 
     // Do two structure types match?  They could be declared independently,
     // in different places, but still might satisfy the definition of matching.

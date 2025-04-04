@@ -7455,10 +7455,12 @@ const TFunction* TParseContext::findFunction120(const TSourceLoc& loc, const TFu
 
             // We have a mismatch in type, see if it is implicitly convertible
 
-            if (function[i].type->isArray() || call[i].type->isArray() ||
-                ! function[i].type->sameElementShape(*call[i].type))
+            if (function[i].type->isArray() || call[i].type->isArray())
                 possibleMatch = false;
             else {
+                if (! function[i].type->sameElementShape(*call[i].type) && !call[i].type->canUseVecConstructorForHigherType(*function[i].type)) {
+                    possibleMatch = false;
+                }
                 // do direction-specific checks for conversion of basic type
                 if (function[i].type->getQualifier().isParamInput()) {
                     if (! intermediate.canImplicitlyPromote(call[i].type->getBasicType(), function[i].type->getBasicType()))

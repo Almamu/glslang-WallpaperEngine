@@ -912,6 +912,9 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
                 return nullptr;
         }
 
+        // add vec conversion like in EOpAssign
+        if (node->getType().canUseVecConstructorForHigherType(type))
+            return addShapeConversion (type, node);
         if (type.getBasicType() == node->getType().getBasicType())
             return node;
 
@@ -3441,10 +3444,7 @@ bool TIntermediate::promoteBinary(TIntermBinary& node)
         break;
 
     case EOpAssign:
-        if (left->isVector() && !right->isVector() && left->getBasicType() == right->getBasicType()) {
-            right = addShapeConversion(left->getType(), right);
-            node.setRight(right);
-        } else if (left->getVectorSize() != right->getVectorSize() || left->getMatrixCols() != right->getMatrixCols() || left->getMatrixRows() != right->getMatrixRows())
+        if (left->getVectorSize() != right->getVectorSize() || left->getMatrixCols() != right->getMatrixCols() || left->getMatrixRows() != right->getMatrixRows())
             return false;
         [[fallthrough]];
 
