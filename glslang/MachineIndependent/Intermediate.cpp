@@ -915,6 +915,8 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
         // add vec conversion like in EOpAssign
         if (node->getType().canUseVecConstructorForHigherType(type))
             return addShapeConversion (type, node);
+        if (node->getType().canUseVecXForFloatType(type))
+            return addShapeConversion (type, node);
         if (type.getBasicType() == node->getType().getBasicType())
             return node;
 

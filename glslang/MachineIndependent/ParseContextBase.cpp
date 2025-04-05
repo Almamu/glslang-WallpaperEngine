@@ -589,9 +589,11 @@ void TParseContextBase::parseSwizzleSelector(const TSourceLoc& loc, const TStrin
     // Additional error checking.
     for (int i = 0; i < selector.size(); ++i) {
         if (selector[i] >= vecSize) {
-            error(loc, "vector swizzle selection out of range",  compString.c_str(), "");
-            selector.resize(i);
-            break;
+            warn(loc, "vector swizzle selection out of range",  compString.c_str(), "guessing right values");
+            // adjusts the value to the maximum fields of the vector
+            // vec2.zw will be vec2.xy
+            // vec3.w will be vec3.x and so on
+            selector[i] %= vecSize;
         }
 
         if (i > 0 && fieldSet[i] != fieldSet[i-1]) {

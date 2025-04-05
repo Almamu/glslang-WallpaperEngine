@@ -79,6 +79,11 @@ public:
         size_ = s;
     }
     int size() const { return size_; }
+    selectorType& operator[](int i)
+    {
+        assert(i < MaxSwizzleSelectors);
+        return components[i];
+    }
     selectorType operator[](int i) const
     {
         assert(i < MaxSwizzleSelectors);
