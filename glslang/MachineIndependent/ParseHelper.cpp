@@ -3577,6 +3577,12 @@ void TParseContext::integerCheck(const TIntermTyped* node, const char* token)
          intermediate.canImplicitlyPromote(from_type, EbtUint, EOpNull)) && node->isScalar())
         return;
 
+    // special case for [] arrays, i don't like the idea of modifying the generated code
+    // and don't want to spend the time to look into it
+    if (strncmp (token, "[]", 2) == 0 && from_type == EbtFloat) {
+        return;
+    }
+
     error(node->getLoc(), "scalar integer expression required", token, "");
 }
 
