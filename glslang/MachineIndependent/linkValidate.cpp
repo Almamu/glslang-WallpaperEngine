@@ -116,7 +116,7 @@ void TIntermediate::mergeUniformObjects(TInfoSink& infoSink, TIntermediate& unit
     // merge uniforms and do error checking
     bool mergeExistingOnly = false;
     mergeGlobalUniformBlocks(infoSink, unit, mergeExistingOnly);
-    mergeLinkerObjects(infoSink, linkerObjects, unitLinkerObjects, unit.getStage());
+    mergeLinkerObjects(infoSink, linkerObjects, unitLinkerObjects, unit.getStage(), unit);
 }
 
 static inline bool isSameInterface(TIntermSymbol* symbol, TIntermSymbol* unitSymbol) {
@@ -165,7 +165,7 @@ void TIntermediate::checkStageIO(TInfoSink& infoSink, TIntermediate& unit) {
     unitLinkerObjects.resize(unitEnd - unitLinkerObjects.begin());
 
     // do matching and error checking
-    mergeLinkerObjects(infoSink, linkerObjects, unitLinkerObjects, unit.getStage());
+    mergeLinkerObjects(infoSink, linkerObjects, unitLinkerObjects, unit.getStage(), unit);
 
     // TODO: final check; make sure that any statically used `in` have matching `out` written to
 }
@@ -500,7 +500,7 @@ void TIntermediate::mergeTrees(TInfoSink& infoSink, TIntermediate& unit)
     mergeBodies(infoSink, globals, unitGlobals);
     bool mergeExistingOnly = false;
     mergeGlobalUniformBlocks(infoSink, unit, mergeExistingOnly);
-    mergeLinkerObjects(infoSink, linkerObjects, unitLinkerObjects, unit.getStage());
+    mergeLinkerObjects(infoSink, linkerObjects, unitLinkerObjects, unit.getStage(), unit);
     ioAccessed.insert(unit.ioAccessed.begin(), unit.ioAccessed.end());
 }
 
@@ -822,7 +822,7 @@ void TIntermediate::mergeBlockDefinitions(TInfoSink& infoSink, TIntermSymbol* bl
 // Merge the linker objects from unitLinkerObjects into linkerObjects.
 // Duplication is expected and filtered out, but contradictions are an error.
 //
-void TIntermediate::mergeLinkerObjects(TInfoSink& infoSink, TIntermSequence& linkerObjects, const TIntermSequence& unitLinkerObjects, EShLanguage unitStage)
+void TIntermediate::mergeLinkerObjects(TInfoSink& infoSink, TIntermSequence& linkerObjects, const TIntermSequence& unitLinkerObjects, EShLanguage unitStage, TIntermediate& unit)
 {
     // Error check and merge the linker objects (duplicates should not be created)
     std::size_t initialNumLinkerObjects = linkerObjects.size();
@@ -870,7 +870,7 @@ void TIntermediate::mergeLinkerObjects(TInfoSink& infoSink, TIntermSequence& lin
                 mergeImplicitArraySizes(symbol->getWritableType(), unitSymbol->getType());
 
                 // Check for consistent types/qualification/initializers etc.
-                mergeErrorCheck(infoSink, *symbol, *unitSymbol);
+                mergeErrorCheck(infoSink, *symbol, *unitSymbol, unit);
             }
             // If different symbols, verify they arn't push_constant since there can only be one per stage
             else if (symbol->getQualifier().isPushConstant() && unitSymbol->getQualifier().isPushConstant() && getStage() == unitStage)
@@ -956,7 +956,7 @@ void TIntermediate::mergeImplicitArraySizes(TType& type, const TType& unitType)
 //
 // This function only does one of intra- or cross-stage matching per call.
 //
-void TIntermediate::mergeErrorCheck(TInfoSink& infoSink, const TIntermSymbol& symbol, const TIntermSymbol& unitSymbol)
+void TIntermediate::mergeErrorCheck(TInfoSink& infoSink, const TIntermSymbol& symbol, const TIntermSymbol& unitSymbol, TIntermediate& unit)
 {
     EShLanguage stage = symbol.getStage();
     EShLanguage unitStage = unitSymbol.getStage();
@@ -1028,9 +1028,108 @@ void TIntermediate::mergeErrorCheck(TInfoSink& infoSink, const TIntermSymbol& sy
                   infoSink.info << "    " << StageName(stage) << " stage: Block: " << symbol.getType().getTypeName() << ", Member: n/a \n";
                   errorReported = true;
             } else {
-                  error(infoSink, "Types must match:", unitStage);
-                  writeTypeComparison = true;
-                  printType = true;
+                  // lpidx == -1 && rpidx == -1, types do not match, try to do some variable promotion if possible
+                  if (symbol.getType ().getBasicType() == unitSymbol.getType ().getBasicType() && symbol.getVectorSize() != unitSymbol.getVectorSize()) {
+                      // same type, different vector sizes, update these to the highest value
+                      int newSize = std::max(symbol.getVectorSize(), unitSymbol.getVectorSize());
+
+                      const_cast <TType&> (symbol.getType ()).setVectorSize (newSize);
+                      const_cast <TType&> (unitSymbol.getType ()).setVectorSize (newSize);
+
+                      //
+                      // sadly this change implies that the usages of this variable have to be updated everywhere,
+                      // otherwise spv information won't be built properly due to how this data is propagated
+                      // in a nutshell, all the nodes using this symbol have the same id, but don't have
+                      // a full reference to the actual declaration of the variable
+                      // thus every usage of that variable is actually a copy of it...
+                      // one solution would be to refactor the whole glslang library to keep references
+                      // but to be honest, that's waaaay out of scope...
+                      // so some mokey-patching is due in this case...
+                      //
+                      const auto modifyNode = [&](TIntermNode* node, const TIntermSymbol& from) -> void {
+                          auto actualFunction = [&](const auto &self, TIntermNode* node, const TIntermSymbol& from) -> void {
+                              if (node->getAsAggregate()) {
+                                  for (auto& child : node->getAsAggregate()->getSequence())
+                                      self(self, child, from);
+                              } else if (node->getAsUnaryNode()) {
+                                  self(self, node->getAsUnaryNode()->getOperand(), from);
+                              } else if (node->getAsBinaryNode()) {
+                                  TIntermBinary* binary = node->getAsBinaryNode();
+
+                                  if (binary->getLeft()) {
+                                      self(self, node->getAsBinaryNode()->getLeft(), from);
+                                  }
+                                  if (binary->getRight()) {
+                                      self(self, node->getAsBinaryNode()->getRight(), from);
+                                  }
+                              } else if (node->getAsSelectionNode()) {
+                                  TIntermSelection* selection = node->getAsSelectionNode();
+
+                                  if (selection->getCondition()) {
+                                      self(self, node->getAsSelectionNode()->getCondition(), from);
+                                  }
+                                  if (selection->getTrueBlock()) {
+                                      self(self, node->getAsSelectionNode()->getTrueBlock(), from);
+                                  }
+                                  if (selection->getFalseBlock()) {
+                                      self(self, node->getAsSelectionNode()->getFalseBlock(), from);
+                                  }
+                              } else if (node->getAsSwitchNode()) {
+                                  TIntermSwitch* switchNode = node->getAsSwitchNode();
+
+                                  if (switchNode->getCondition()) {
+                                      self(self, switchNode->getCondition(), from);
+                                  }
+                                  if (switchNode->getBody()) {
+                                      self(self, switchNode->getBody(), from);
+                                  }
+                              } else if (node->getAsMethodNode()) {
+                                  if (node->getAsMethodNode()->getObject()) {
+                                      self(self, node->getAsMethodNode()->getObject(), from);
+                                  }
+                              } else if (node->getAsSymbolNode()) {
+                                  TIntermSymbol* symbol = node->getAsSymbolNode();
+
+                                  if (symbol->getId () == from.getId ()) {
+                                      symbol->getWritableType ().shallowCopy (from.getType ());
+                                  }
+                              } else if (node->getAsBranchNode()) {
+                                  if (node->getAsBranchNode()->getExpression()) {
+                                      self(self, node->getAsBranchNode()->getExpression(), from);
+                                  }
+                              } else if (node->getAsLoopNode()) {
+                                  TIntermLoop* loop = node->getAsLoopNode();
+
+                                  if (loop->getTest()) {
+                                      self(self, loop->getTest(), from);
+                                  }
+                                  if (loop->getBody()) {
+                                      self(self, loop->getBody(), from);
+                                  }
+                                  if(loop->getTerminal()) {
+                                      self(self, loop->getTerminal(), from);
+                                  }
+                              } else if (!node->getAsConstantUnion() && !node->getAsTyped ()) {
+                                      error(infoSink, "Cannot traverse node for in/out promotion, shader might not work properly");
+                              }
+                          };
+
+                          actualFunction(actualFunction, node, from);
+                      };
+
+                      // traverse both intermediates so they're updated
+                      // IMPORTANT: THIS WORKS BECAUSE WPENGINE ONLY EVER USES TWO TYPES OF SHADERS
+                      // IF MORE TYPES OF SHADERS ARE ADDED, THOSE WILL NEED TO BE TAKEN INTO ACCOUNT WHEN VALIDATING INOUT
+                      // TYPES, A NEW STEP IN LINKING WOULD BE NEEDED...
+                      for (auto& node : unit.getTreeRoot()->getAsAggregate()->getSequence ())
+                          modifyNode(node, unitSymbol);
+                      for (auto& node : getTreeRoot()->getAsAggregate()->getSequence ())
+                          modifyNode(node, symbol);
+                  } else {
+                      error(infoSink, "Types must at least be of the same basic type:", unitStage);
+                      writeTypeComparison = true;
+                      printType = true;
+                  }
             }
         } else if (!arraysMatch) {
             error(infoSink, "Array sizes must be compatible:", unitStage);
