@@ -7491,6 +7491,8 @@ const TFunction* TParseContext::findFunction120(const TSourceLoc& loc, const TFu
         return candidate;
     }
 
+    int matchWithSameCasts = 0;
+    int matchRequiredCasts = INT_MAX;
     // TODO: MAYBE THIS NEEDS SOME EXTRA WORK
     for (auto it = candidateList.begin(); it != candidateList.end(); ++it) {
         const TFunction& function = *(*it);
@@ -7499,6 +7501,7 @@ const TFunction* TParseContext::findFunction120(const TSourceLoc& loc, const TFu
         if (call.getParamCount() != function.getParamCount())
             continue;
 
+        int requiresCasts = 0;
         bool possibleMatch = true;
         for (int i = 0; i < function.getParamCount(); ++i) {
             // same types is easy
@@ -7510,8 +7513,13 @@ const TFunction* TParseContext::findFunction120(const TSourceLoc& loc, const TFu
             if (function[i].type->isArray() || call[i].type->isArray())
                 possibleMatch = false;
             else {
+                // if a candidate was already found and we match through the implicit promotion
+                // just don't mark it as a match, so the call is not detected as ambiguous
                 if (! function[i].type->sameElementShape(*call[i].type) && !call[i].type->canUseVecConstructorForHigherType(*function[i].type)) {
                     possibleMatch = false;
+                }
+                if (call[i].type->canUseVecConstructorForHigherType(*function[i].type)) {
+                    requiresCasts++;
                 }
                 // do direction-specific checks for conversion of basic type
                 if (function[i].type->getQualifier().isParamInput()) {
@@ -7527,12 +7535,22 @@ const TFunction* TParseContext::findFunction120(const TSourceLoc& loc, const TFu
                 break;
         }
         if (possibleMatch) {
-            if (candidate) {
-                // our second match, meaning ambiguity
-                error(loc, "ambiguous function signature match: multiple signatures match under implicit type conversion", call.getName().c_str(), "");
-            } else
+            if (requiresCasts < matchRequiredCasts) {
                 candidate = &function;
+                matchRequiredCasts = requiresCasts;
+                matchWithSameCasts = 0;
+            } else if (requiresCasts == matchRequiredCasts) {
+                matchWithSameCasts++;
+            }
+
+            if (!candidate && matchWithSameCasts == 0) {
+                candidate = &function;
+            }
         }
+    }
+
+    if (candidate && matchWithSameCasts > 1) {
+        error(loc, "ambiguous function signature match: multiple signatures match under implicit type conversion", call.getName().c_str(), "");
     }
 
     if (candidate == nullptr)

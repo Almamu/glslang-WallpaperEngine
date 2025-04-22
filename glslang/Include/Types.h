@@ -2586,6 +2586,8 @@ public:
 
         if (!this->isVector() && right.isVector())
             return true;
+        if (this->isVector() && right.isVector() && this->vectorSize > right.vectorSize)
+            return true;
 
         return false;
     }
