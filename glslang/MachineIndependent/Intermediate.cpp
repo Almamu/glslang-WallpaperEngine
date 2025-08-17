@@ -2326,6 +2326,41 @@ TIntermTyped* TIntermediate::addSelection(TIntermTyped* cond, TIntermTyped* true
             return falseBlock;
     }
 
+    if (cond->getBasicType() != EbtBool) {
+        TIntermTyped* comparisonAgainst;
+
+        switch (cond->getBasicType()) {
+            case EbtUint8:
+                comparisonAgainst = addConstantUnion((unsigned char)0, loc);
+                break;
+            case EbtInt8:
+                comparisonAgainst = addConstantUnion((char)0, loc);
+                break;
+            case EbtUint16:
+                comparisonAgainst = addConstantUnion((unsigned short)0, loc);
+                break;
+            case EbtInt16:
+                comparisonAgainst = addConstantUnion((short)0, loc);
+                break;
+            case EbtInt:
+                comparisonAgainst = addConstantUnion((int)0, loc);
+                break;
+            case EbtUint:
+                comparisonAgainst = addConstantUnion((unsigned int)0, loc);
+                break;
+            case EbtInt64:
+                comparisonAgainst = addConstantUnion((long long)0, loc);
+                break;
+            case EbtUint64:
+                comparisonAgainst = addConstantUnion((unsigned long long)0, loc);
+                break;
+            default:
+                return nullptr;
+        }
+
+        // convert the value to a comparison against specific value
+        cond = addBinaryMath(EOpGreaterThan, cond, comparisonAgainst, loc);
+    }
     //
     // Make a selection node.
     //

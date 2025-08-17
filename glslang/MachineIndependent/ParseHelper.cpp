@@ -4174,14 +4174,54 @@ bool TParseContext::voidErrorCheck(const TSourceLoc& loc, const TString& identif
 // Checks to see if the node (for the expression) contains a scalar boolean expression or not
 void TParseContext::boolCheck(const TSourceLoc& loc, const TIntermTyped* type)
 {
-    if (type->getBasicType() != EbtBool || type->isArray() || type->isMatrix() || type->isVector())
+    bool isValidType = false;
+
+    switch (type->getBasicType()) {
+        case EbtBool:
+        case EbtInt:
+        case EbtUint:
+        case EbtUint8:
+        case EbtUint16:
+        case EbtUint64:
+        case EbtInt16:
+        case EbtInt8:
+        case EbtInt64:
+            isValidType = true;
+            break;
+
+        default:
+            isValidType = false;
+            break;
+    }
+
+    if (!isValidType || type->isArray() || type->isMatrix() || type->isVector())
         error(loc, "boolean expression expected", "", "");
 }
 
 // This function checks to see if the node (for the expression) contains a scalar boolean expression or not
 void TParseContext::boolCheck(const TSourceLoc& loc, const TPublicType& pType)
 {
-    if (pType.basicType != EbtBool || pType.arraySizes || pType.matrixCols > 1 || (pType.vectorSize > 1))
+    bool isValidType = false;
+
+    switch (pType.basicType) {
+        case EbtBool:
+        case EbtInt:
+        case EbtUint:
+        case EbtUint8:
+        case EbtUint16:
+        case EbtUint64:
+        case EbtInt16:
+        case EbtInt8:
+        case EbtInt64:
+            isValidType = true;
+            break;
+
+        default:
+            isValidType = false;
+            break;
+    }
+
+    if (!isValidType || pType.arraySizes || pType.matrixCols > 1 || (pType.vectorSize > 1))
         error(loc, "boolean expression expected", "", "");
 }
 
