@@ -1534,7 +1534,7 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
                 return getSource() == EShSourceHlsl;
             case EbtFloat:
             case EbtDouble:
-                return op == EOpAssign;
+                return op == EOpAssign || op == EOpAdd || op == EOpSub || op == EOpMul || op == EOpDiv || op == EOpMod || op == EOpMulAssign;
             case EbtInt16:
             case EbtUint16:
                 return numericFeatures.contains(TNumericFeatures::gpu_shader_int16);
@@ -1547,9 +1547,11 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
                 return getSource() == EShSourceHlsl;
             case EbtFloat:
             case EbtDouble:
-                return op == EOpAssign;
+                return op == EOpAssign || op == EOpAdd || op == EOpSub || op == EOpMul || op == EOpDiv || op == EOpMod || op == EOpMulAssign;
             case EbtInt16:
                 return numericFeatures.contains(TNumericFeatures::gpu_shader_int16);
+            case EbtUint:
+                return op == EOpAssign || op == EOpAdd || op == EOpSub || op == EOpMul || op == EOpDiv || op == EOpMod || op == EOpMulAssign;
             default:
                 return false;
             }
@@ -1557,7 +1559,7 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
             switch (from) {
             case EbtFloat:
             case EbtDouble:
-                return op == EOpAssign;
+                return op == EOpAssign || op == EOpAdd || op == EOpSub || op == EOpMul || op == EOpDiv || op == EOpMod || op == EOpMulAssign;
             case EbtInt:
             case EbtUint:
             case EbtInt64:
@@ -1572,7 +1574,7 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
             switch (from) {
             case EbtFloat:
             case EbtDouble:
-                return op == EOpAssign;
+                return op == EOpAssign || op == EOpAdd || op == EOpSub || op == EOpMul || op == EOpDiv || op == EOpMod || op == EOpMulAssign;
             case EbtInt:
                 return true;
             case EbtInt16:
@@ -1593,7 +1595,7 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
             switch (from) {
             case EbtFloat:
             case EbtDouble:
-                return op == EOpAssign;
+                return op == EOpAssign || op == EOpAdd || op == EOpSub || op == EOpMul || op == EOpDiv || op == EOpMod || op == EOpMulAssign;
             case EbtInt16:
                 return numericFeatures.contains(TNumericFeatures::gpu_shader_int16);
             default:
@@ -3250,6 +3252,9 @@ bool TIntermediate::promoteBinary(TIntermBinary& node)
         if (getSource() == EShSourceHlsl)
             break;
 
+        // Check for the same types, this should be allowed 100%
+        if (left->getBasicType() == right->getBasicType())
+            return true;
         // Check for integer-only operands.
         if (!isTypeInt(left->getBasicType()) && !isTypeInt(right->getBasicType()))
             return false;
