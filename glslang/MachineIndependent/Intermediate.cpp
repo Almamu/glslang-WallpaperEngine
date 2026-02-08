@@ -1532,6 +1532,9 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
                 return version >= 400 || getSource() == EShSourceHlsl || IsRequestedExtension(E_GL_ARB_gpu_shader5);
             case EbtBool:
                 return getSource() == EShSourceHlsl;
+            case EbtFloat:
+            case EbtDouble:
+                return op == EOpAssign;
             case EbtInt16:
             case EbtUint16:
                 return numericFeatures.contains(TNumericFeatures::gpu_shader_int16);
@@ -1543,7 +1546,6 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
             case EbtBool:
                 return getSource() == EShSourceHlsl;
             case EbtFloat:
-                return op == EOpAssign;
             case EbtDouble:
                 return op == EOpAssign;
             case EbtInt16:
@@ -1553,6 +1555,9 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
             }
         case EbtUint64:
             switch (from) {
+            case EbtFloat:
+            case EbtDouble:
+                return op == EOpAssign;
             case EbtInt:
             case EbtUint:
             case EbtInt64:
@@ -1565,6 +1570,9 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
             }
         case EbtInt64:
             switch (from) {
+            case EbtFloat:
+            case EbtDouble:
+                return op == EOpAssign;
             case EbtInt:
                 return true;
             case EbtInt16:
@@ -1583,6 +1591,9 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
             return false;
         case EbtUint16:
             switch (from) {
+            case EbtFloat:
+            case EbtDouble:
+                return op == EOpAssign;
             case EbtInt16:
                 return numericFeatures.contains(TNumericFeatures::gpu_shader_int16);
             default:
