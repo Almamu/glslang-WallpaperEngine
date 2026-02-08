@@ -910,6 +910,13 @@ TIntermTyped* TParseContext::handleBinaryMath(const TSourceLoc& loc, const char*
         allowed = false;
     }
 
+    if (
+        (left->getType().containsBasicType(EbtBool) && right->getType().containsBasicType(EbtFloat)) ||
+        (left->getType().containsBasicType(EbtBool) && right->getType().containsBasicType(EbtDouble))
+    ) {
+        allowed = true;
+    }
+
     TIntermTyped* result = nullptr;
     if (allowed) {
         if ((left->isReference() || right->isReference()))

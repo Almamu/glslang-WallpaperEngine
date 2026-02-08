@@ -1492,6 +1492,8 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
         switch (to) {
         case EbtDouble:
             switch (from) {
+            case EbtBool:
+                    return true;
             case EbtInt:
             case EbtUint:
             case EbtInt64:
@@ -1514,7 +1516,7 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
             case EbtUint:
                  return true;
             case EbtBool:
-                 return getSource() == EShSourceHlsl;
+                 return true;
             case EbtInt16:
             case EbtUint16:
                 return numericFeatures.contains(TNumericFeatures::gpu_shader_int16);
