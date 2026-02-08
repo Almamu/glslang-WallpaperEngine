@@ -1542,6 +1542,10 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
             switch (from) {
             case EbtBool:
                 return getSource() == EShSourceHlsl;
+            case EbtFloat:
+                return op == EOpAssign;
+            case EbtDouble:
+                return op == EOpAssign;
             case EbtInt16:
                 return numericFeatures.contains(TNumericFeatures::gpu_shader_int16);
             default:
