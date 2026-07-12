@@ -3146,8 +3146,9 @@ bool TIntermediate::promoteBinary(TIntermBinary& node)
     //
 
     // HLSL implicitly promotes bool -> int for numeric operations.
+    // Also allow this for GLSL when processing Wallpaper Engine HLSL shaders.
     // (Implicit conversions to make the operands match each other's types were already done.)
-    if (getSource() == EShSourceHlsl &&
+    if ((getSource() == EShSourceHlsl || getSource() == EShSourceGlsl) &&
         (left->getBasicType() == EbtBool || right->getBasicType() == EbtBool)) {
         switch (op) {
         case EOpLessThan:
