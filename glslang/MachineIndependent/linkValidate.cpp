@@ -1032,6 +1032,9 @@ void TIntermediate::mergeErrorCheck(TInfoSink& infoSink, const TIntermSymbol& sy
                   if (symbol.getType ().getBasicType() == unitSymbol.getType ().getBasicType() && symbol.getVectorSize() != unitSymbol.getVectorSize()) {
                       // same type, different vector sizes, update these to the highest value
                       int newSize = std::max(symbol.getVectorSize(), unitSymbol.getVectorSize());
+                      // the side that was narrower keeps reading and writing its original size, see narrowUse
+                      const int symbolSize = symbol.getVectorSize();
+                      const int unitSymbolSize = unitSymbol.getVectorSize();
 
                       const_cast <TType&> (symbol.getType ()).setVectorSize (newSize);
                       const_cast <TType&> (unitSymbol.getType ()).setVectorSize (newSize);
@@ -1046,21 +1049,60 @@ void TIntermediate::mergeErrorCheck(TInfoSink& infoSink, const TIntermSymbol& sy
                       // but to be honest, that's waaaay out of scope...
                       // so some mokey-patching is due in this case...
                       //
-                      const auto modifyNode = [&](TIntermNode* node, const TIntermSymbol& from) -> void {
+                      // Widening the symbol changes the type of every use, but not of the
+                      // expressions around them: in a stage that declared it narrower,
+                      // "vec2 p = v_TexCoord;" would store a vec4 into a vec2, which
+                      // SPIR-V and the GLSL generated from it reject. Read such uses through
+                      // a swizzle back to the size that stage declared (v_TexCoord.xy); a
+                      // swizzle is an l-value, so writes keep working too.
+                      const auto narrowUse = [&](TIntermTyped* node, const TIntermSymbol& from, int originalSize) -> TIntermTyped* {
+                          TIntermSymbol* use = node != nullptr ? node->getAsSymbolNode() : nullptr;
+                          if (use == nullptr || use->getId() != from.getId() || originalSize >= newSize)
+                              return node;
+
+                          if (originalSize == 1) {
+                              TIntermTyped* index = addConstantUnion(0, node->getLoc());
+                              TIntermTyped* result = addIndex(EOpIndexDirect, node, index, node->getLoc());
+                              result->setType(TType(node->getBasicType(), EvqTemporary, node->getType().getQualifier().precision));
+                              return result;
+                          }
+
+                          TSwizzleSelectors<TVectorSelector> selectors;
+                          for (int i = 0; i < originalSize; i++)
+                              selectors.push_back(i);
+
+                          TIntermTyped* index = addSwizzle(selectors, node->getLoc());
+                          TIntermTyped* result = addIndex(EOpVectorSwizzle, node, index, node->getLoc());
+                          result->setType(TType(node->getBasicType(), EvqTemporary, node->getType().getQualifier().precision, originalSize));
+                          return result;
+                      };
+
+                      const auto modifyNode = [&](TIntermNode* node, const TIntermSymbol& from, int originalSize) -> void {
                           auto actualFunction = [&](const auto &self, TIntermNode* node, const TIntermSymbol& from) -> void {
                               if (node->getAsAggregate()) {
-                                  for (auto& child : node->getAsAggregate()->getSequence())
+                                  // the linker objects are the declarations themselves
+                                  const bool declarations = node->getAsAggregate()->getOp() == EOpLinkerObjects;
+                                  for (auto& child : node->getAsAggregate()->getSequence()) {
                                       self(self, child, from);
+                                      if (!declarations && child->getAsTyped())
+                                          child = narrowUse(child->getAsTyped(), from, originalSize);
+                                  }
                               } else if (node->getAsUnaryNode()) {
                                   self(self, node->getAsUnaryNode()->getOperand(), from);
+                                  node->getAsUnaryNode()->setOperand(narrowUse(node->getAsUnaryNode()->getOperand(), from, originalSize));
                               } else if (node->getAsBinaryNode()) {
                                   TIntermBinary* binary = node->getAsBinaryNode();
 
                                   if (binary->getLeft()) {
                                       self(self, node->getAsBinaryNode()->getLeft(), from);
+                                      // a swizzle or index on the widened symbol reads components the stage declared already
+                                      const TOperator op = binary->getOp();
+                                      if (op != EOpVectorSwizzle && op != EOpIndexDirect && op != EOpIndexIndirect)
+                                          binary->setLeft(narrowUse(binary->getLeft(), from, originalSize));
                                   }
                                   if (binary->getRight()) {
                                       self(self, node->getAsBinaryNode()->getRight(), from);
+                                      binary->setRight(narrowUse(binary->getRight(), from, originalSize));
                                   }
                               } else if (node->getAsSelectionNode()) {
                                   TIntermSelection* selection = node->getAsSelectionNode();
@@ -1122,9 +1164,9 @@ void TIntermediate::mergeErrorCheck(TInfoSink& infoSink, const TIntermSymbol& sy
                       // IF MORE TYPES OF SHADERS ARE ADDED, THOSE WILL NEED TO BE TAKEN INTO ACCOUNT WHEN VALIDATING INOUT
                       // TYPES, A NEW STEP IN LINKING WOULD BE NEEDED...
                       for (auto& node : unit.getTreeRoot()->getAsAggregate()->getSequence ())
-                          modifyNode(node, unitSymbol);
+                          modifyNode(node, unitSymbol, unitSymbolSize);
                       for (auto& node : getTreeRoot()->getAsAggregate()->getSequence ())
-                          modifyNode(node, symbol);
+                          modifyNode(node, symbol, symbolSize);
                   } else {
                       error(infoSink, "Types must at least be of the same basic type:", unitStage);
                       writeTypeComparison = true;
