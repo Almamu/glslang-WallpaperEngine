@@ -1060,6 +1060,8 @@ void TIntermediate::addBiShapeConversion(TOperator op, TIntermTyped*& lhsNode, T
     case EShSourceHlsl:
         break;
     case EShSourceGlsl:
+        addTruncatingVectorConversion(op, lhsNode, rhsNode);
+        return;
     default:
         return;
     }
@@ -1135,6 +1137,36 @@ void TIntermediate::addBiShapeConversion(TOperator op, TIntermTyped*& lhsNode, T
     }
     lhsNode = addShapeConversion(rhsNode->getType(), lhsNode);
     rhsNode = addShapeConversion(lhsNode->getType(), rhsNode);
+}
+
+// Wallpaper Engine shaders are written against HLSL's rules: when two vectors of
+// different sizes meet in component-wise math, the wider one is truncated to the
+// narrower one's size (a vec4 times a vec2 uses the vec4's .xy). GLSL rejects those
+// expressions, so apply the same truncation to them.
+//
+// Only vector-vector arithmetic is touched; scalars, matrices and assignments keep
+// the GLSL rules.
+void TIntermediate::addTruncatingVectorConversion(TOperator op, TIntermTyped*& lhsNode, TIntermTyped*& rhsNode)
+{
+    switch (op) {
+    case EOpAdd:
+    case EOpSub:
+    case EOpMul:
+    case EOpDiv:
+        break;
+    default:
+        return;
+    }
+
+    if (!lhsNode->isVector() || !rhsNode->isVector() || lhsNode->getVectorSize() == rhsNode->getVectorSize())
+        return;
+
+    TIntermTyped*& wider = lhsNode->getVectorSize() > rhsNode->getVectorSize() ? lhsNode : rhsNode;
+    const int size = std::min(lhsNode->getVectorSize(), rhsNode->getVectorSize());
+
+    TType narrowed(wider->getBasicType(), EvqTemporary, size);
+    narrowed.getQualifier().precision = wider->getQualifier().precision;
+    wider = addShapeConversion(narrowed, wider);
 }
 
 // Convert the node's shape of type for the given type, as allowed by the
